@@ -1,0 +1,32 @@
+﻿**********************
+Windows PowerShell transcript start
+Start time: 20250930042055
+Username: DESKTOP-72MQQIG\sanch
+RunAs User: DESKTOP-72MQQIG\sanch
+Configuration Name: 
+Machine: DESKTOP-72MQQIG (Microsoft Windows NT 10.0.19045.0)
+Host Application: C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe -noexit -command try { . "c:\Users\sanch\AppData\Local\Programs\Microsoft VS Code\resources\app\out\vs\workbench\contrib\terminal\common\scripts\shellIntegration.ps1" } catch {}
+Process ID: 15764
+PSVersion: 5.1.19041.6328
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.19041.6328
+BuildVersion: 10.0.19041.6328
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+Transcript started, output file is streamlit_log.txt
+]633;D;0]633;A]633;P;Cwd=C:\x5cUsers\x5csanch\x5cDesktop\x5cRobloxVirtualEconomy\x5cearly_shiftPS C:\Users\sanch\Desktop\RobloxVirtualEconomy\early_shift> ]633;B
+PS>streamlit run dashboard_app.py
+
+  You can now view your Streamlit app in your browser.
+
+  Local URL: http://localhost:8501
+  Network URL: http://192.168.1.10:8501
+]633;D;1]633;A]633;P;Cwd=C:\x5cUsers\x5csanch\x5cDesktop\x5cRobloxVirtualEconomy\x5cearly_shiftPS C:\Users\sanch\Desktop\RobloxVirtualEconomy\early_shift> ]633;B
+PS>Stop-Transcript
+**********************
+Windows PowerShell transcript end
+End time: 20250930042127
+**********************
