@@ -22,6 +22,7 @@ class SchemaManager:
         SchemaManager._ensure_studios_table(db)
         SchemaManager._ensure_youtube_table(db)
         SchemaManager._ensure_mechanic_spikes_table(db)
+        SchemaManager._ensure_custom_games_table(db)
         db.commit()
     
     @staticmethod
@@ -116,5 +117,27 @@ class SchemaManager:
                 video_url TEXT,
                 channel_title TEXT,
                 detected_at TIMESTAMP NOT NULL
+            )
+        """)
+        
+        # Outcome tracking columns for measuring precision
+        db.execute(f"ALTER TABLE {Tables.MECHANIC_SPIKES} ADD COLUMN IF NOT EXISTS sustained_growth_72h BOOLEAN")
+        db.execute(f"ALTER TABLE {Tables.MECHANIC_SPIKES} ADD COLUMN IF NOT EXISTS manually_validated BOOLEAN")
+        db.execute(f"ALTER TABLE {Tables.MECHANIC_SPIKES} ADD COLUMN IF NOT EXISTS validation_notes TEXT")
+        db.execute(f"ALTER TABLE {Tables.MECHANIC_SPIKES} ADD COLUMN IF NOT EXISTS outcome_updated_at TIMESTAMP")
+    
+    @staticmethod
+    def _ensure_custom_games_table(db: duckdb.DuckDBPyConnection) -> None:
+        """Create custom_games table for developer-added games."""
+        db.execute(f"""
+            CREATE TABLE IF NOT EXISTS {Tables.CUSTOM_GAMES} (
+                universe_id BIGINT PRIMARY KEY,
+                game_name TEXT,
+                owner_name TEXT,
+                owner_contact TEXT,
+                webhook_url TEXT,
+                notes TEXT,
+                is_active BOOLEAN DEFAULT TRUE,
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
