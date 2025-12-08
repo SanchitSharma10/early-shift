@@ -3,11 +3,16 @@ notion_writer.py - Writes trending games to Notion databases.
 """
 
 import asyncio
+import logging
 from datetime import datetime
 from typing import Dict, List
 
 from notion_client import Client
 from notion_client.errors import APIResponseError
+
+from exceptions import NotionAPIError
+
+logger = logging.getLogger(__name__)
 
 
 class NotionWriter:
@@ -22,12 +27,13 @@ class NotionWriter:
         return self._clients[token]
 
     async def send_to_notion(self, studio: Dict[str, object], game: Dict[str, object]) -> None:
+        """Send a trending game notification to a studio's Notion database."""
         token = (studio.get("notion_token") or "").strip()
         database_id = (studio.get("notion_database_id") or "").strip()
         studio_name = studio.get("name", "Unknown Studio")
 
         if not token or not database_id:
-            print(f"Notion credentials missing for {studio_name}; skipping notification.")
+            logger.warning(f"Notion credentials missing for {studio_name}; skipping notification.")
             return
 
         client = self._client_for(token)
@@ -52,29 +58,33 @@ class NotionWriter:
                 parent={"database_id": database_id},
                 properties=properties,
             )
-            print(
+            logger.info(
                 f"Notion update sent to {studio_name}: {game.get('game_name')} +"
                 f"{float(game.get('growth_percent') or 0.0):.1f}%"
             )
         except APIResponseError as api_err:
-            print(
-                f"Notion API error for {studio_name}: {api_err.status} {api_err.message}"
-            )
+            logger.error(f"Notion API error for {studio_name}: {api_err.status} {api_err.message}")
+            raise NotionAPIError(
+                f"Failed to create Notion page for {studio_name}: {api_err.message}",
+                status_code=api_err.status
+            ) from api_err
         except Exception as exc:
-            print(f"Unexpected Notion error for {studio_name}: {exc}")
+            logger.error(f"Unexpected Notion error for {studio_name}: {exc}")
+            raise
 
     async def notify_studios(
         self,
         trending_games: List[Dict[str, object]],
         studios: List[Dict[str, object]],
     ) -> None:
+        """Send notifications for all trending games to all studios."""
         tasks = []
         for game in trending_games:
             for studio in studios:
                 tasks.append(self.send_to_notion(studio, game))
         if tasks:
-            await asyncio.gather(*tasks)
+            await asyncio.gather(*tasks, return_exceptions=True)
 
 
 if __name__ == "__main__":
-    print("This module is intended to be used via EarlyShift.")
+    logger.info("This module is intended to be used via EarlyShift.")

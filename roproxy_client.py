@@ -6,32 +6,28 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Iterable, List, Optional, Sequence
 
 import aiohttp
-import duckdb
 
-FALLBACK_UNIVERSES: List[int] = [
-    994732206, 245662005, 383310974, 47545, 210851291, 4924922222, 185655149,
-    10977891899, 5902977743, 8737602446, 1537690962, 1182249705, 142823291,
-    1400147734, 920587237, 8149070699, 3351674303, 5569431581, 6381829480,
-    4872321990, 4520749081, 13822889, 9498006165, 488667523, 286090429,
-    3823781113, 447452406, 2010620636, 2013640567, 3291301470, 511316432,
-    2216618303, 3145447021, 5926001758, 3192707582, 275420544, 263761432,
-    92012076, 1377239466, 6284583030, 2988862959, 2583109575, 1540764883,
-    5763726676, 3019923553, 5938036553
-]
+from constants import (
+    DEFAULT_CACHE_HOURS,
+    DEFAULT_CONCURRENCY,
+    DEFAULT_DB_PATH,
+    FALLBACK_UNIVERSES,
+    ROPROXY_BASE_URL,
+    ROPROXY_DISCOVERY_ENDPOINTS,
+    Tables,
+)
+from db_manager import DatabaseManager
+from exceptions import RobloxAPIError
+from schema import SchemaManager
 
-POPULAR_ENDPOINTS: List[str] = [
-    "https://games.roproxy.com/v1/discovery/universes",
-    "https://games.roblox.com/v1/discovery/universes",
-]
-
-DEFAULT_CACHE_HOURS = 4
-DEFAULT_CONCURRENCY = 12
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -52,12 +48,12 @@ class RoProxyClient:
 
     def __init__(
         self,
-        db_path: str = "early_shift.db",
+        db_path: str = DEFAULT_DB_PATH,
         cache_hours: int = DEFAULT_CACHE_HOURS,
         max_concurrency: int = DEFAULT_CONCURRENCY,
     ) -> None:
-        self.db = duckdb.connect(db_path)
-        self.base_url = "https://games.roproxy.com/v1/games"
+        self.db_manager = DatabaseManager(db_path)
+        self.base_url = ROPROXY_BASE_URL
         self.cache_path = Path(db_path).with_suffix(".top_universes.json")
         self.cache_ttl = timedelta(hours=cache_hours)
         self.http_timeout = aiohttp.ClientTimeout(total=20)
@@ -65,41 +61,9 @@ class RoProxyClient:
         self._init_db()
 
     def _init_db(self) -> None:
-        self.db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS games (
-                universe_id BIGINT,
-                name TEXT,
-                ccu INTEGER,
-                timestamp TIMESTAMP,
-                PRIMARY KEY (universe_id, timestamp)
-            )
-            """
-        )
-        columns = {row[1] for row in self.db.execute("PRAGMA table_info('games')").fetchall()}
-        if "game_id" in columns and "universe_id" not in columns:
-            self.db.execute("ALTER TABLE games RENAME COLUMN game_id TO universe_id")
-        self.db.execute("ALTER TABLE games ADD COLUMN IF NOT EXISTS name TEXT")
-        self.db.execute("ALTER TABLE games ADD COLUMN IF NOT EXISTS ccu INTEGER")
-        self.db.execute("ALTER TABLE games ADD COLUMN IF NOT EXISTS timestamp TIMESTAMP")
-
-        self.db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS game_metadata (
-                universe_id BIGINT PRIMARY KEY,
-                name TEXT,
-                root_place_id BIGINT,
-                creator_id BIGINT,
-                creator_name TEXT,
-                description TEXT,
-                genre TEXT,
-                visits BIGINT,
-                last_seen_ccu INTEGER,
-                updated_at TIMESTAMP
-            )
-            """
-        )
-        self.db.commit()
+        """Initialize database schema."""
+        SchemaManager._ensure_games_tables(self.db_manager.db)
+        self.db_manager.db.commit()
 
     async def _fetch_top_universes(self, limit: int) -> List[int]:
         universe_ids: List[int] = []
@@ -109,7 +73,7 @@ class RoProxyClient:
             "Accept": "application/json",
         }
         async with aiohttp.ClientSession(timeout=self.http_timeout, headers=headers) as session:
-            for endpoint in POPULAR_ENDPOINTS:
+            for endpoint in ROPROXY_DISCOVERY_ENDPOINTS:
                 cursor: Optional[str] = None
                 try:
                     while len(universe_ids) < limit:
@@ -141,7 +105,7 @@ class RoProxyClient:
                         if not cursor:
                             break
                 except Exception as exc:
-                    print(f"Warning: unable to fetch discovery data from {endpoint}: {exc}")
+                    logger.warning(f"Unable to fetch discovery data from {endpoint}: {exc}")
                 if universe_ids:
                     break
         return universe_ids
@@ -176,7 +140,7 @@ class RoProxyClient:
         if universe_ids:
             self._save_cached_universes(universe_ids)
             return universe_ids
-        print("Warning: using fallback universe list; discovery APIs unavailable.")
+        logger.warning("Using fallback universe list; discovery APIs unavailable.")
         self._save_cached_universes(FALLBACK_UNIVERSES)
         return FALLBACK_UNIVERSES[:limit]
 
@@ -220,9 +184,10 @@ class RoProxyClient:
         )
 
     def _upsert_metadata(self, snapshot: UniverseSnapshot) -> None:
-        self.db.execute(
-            """
-            INSERT OR REPLACE INTO game_metadata (
+        """Update game metadata in database."""
+        self.db_manager.db.execute(
+            f"""
+            INSERT OR REPLACE INTO {Tables.GAME_METADATA} (
                 universe_id, name, root_place_id, creator_id, creator_name,
                 description, genre, visits, last_seen_ccu, updated_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -242,9 +207,10 @@ class RoProxyClient:
         )
 
     async def poll_top_games(self, universe_ids: Sequence[int]) -> None:
+        """Poll CCU data for the specified universe IDs."""
         unique_ids = list(dict.fromkeys(int(uid) for uid in universe_ids))
         if not unique_ids:
-            print("No universe IDs supplied; skipping poll.")
+            logger.warning("No universe IDs supplied; skipping poll.")
             return
 
         timestamp = datetime.utcnow()
@@ -259,16 +225,20 @@ class RoProxyClient:
 
         for snapshot in snapshots:
             self._upsert_metadata(snapshot)
-            self.db.execute(
-                "DELETE FROM games WHERE universe_id = ? AND timestamp = ?",
+            self.db_manager.db.execute(
+                f"DELETE FROM {Tables.GAMES} WHERE universe_id = ? AND timestamp = ?",
                 (snapshot.universe_id, timestamp),
             )
-            self.db.execute(
-                "INSERT INTO games (universe_id, name, ccu, timestamp) VALUES (?, ?, ?, ?)",
+            self.db_manager.db.execute(
+                f"INSERT INTO {Tables.GAMES} (universe_id, name, ccu, timestamp) VALUES (?, ?, ?, ?)",
                 (snapshot.universe_id, snapshot.name, snapshot.ccu, timestamp),
             )
-        self.db.commit()
-        print(f"[OK] Polled {len(unique_ids)} universes at {timestamp.isoformat()}Z")
+        self.db_manager.db.commit()
+        logger.info(f"Polled {len(unique_ids)} universes at {timestamp.isoformat()}Z")
+    
+    def close(self) -> None:
+        """Close database connection."""
+        self.db_manager.close()
 
 
 if __name__ == "__main__":

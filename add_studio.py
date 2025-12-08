@@ -7,7 +7,7 @@ from typing import Optional
 
 import duckdb
 
-DB_PATH = "early_shift.db"
+from constants import DEFAULT_DB_PATH
 
 
 def ensure_schema(db: duckdb.DuckDBPyConnection) -> None:
@@ -30,11 +30,17 @@ def ensure_schema(db: duckdb.DuckDBPyConnection) -> None:
     db.execute("ALTER TABLE studios ADD COLUMN IF NOT EXISTS ntfy_topic TEXT")
 
 
-def add_studio(name: str, notion_token: str, database_id: str, ntfy_topic: Optional[str] = None) -> None:
+def add_studio(
+    name: str,
+    notion_token: str,
+    database_id: str,
+    ntfy_topic: Optional[str] = None,
+    db_path: str = DEFAULT_DB_PATH,
+) -> None:
     """Register a studio and its delivery preferences."""
     studio_id = name.lower().strip().replace(" ", "-")
 
-    db = duckdb.connect(DB_PATH)
+    db = duckdb.connect(db_path)
     ensure_schema(db)
 
     db.execute(
@@ -61,6 +67,17 @@ if __name__ == "__main__":
     parser.add_argument("--token", required=True, help="Notion API token")
     parser.add_argument("--database", required=True, help="Notion database ID")
     parser.add_argument("--ntfy-topic", help="Optional ntfy.sh topic for mobile alerts")
+    parser.add_argument(
+        "--db-path",
+        default=DEFAULT_DB_PATH,
+        help="Path to database file",
+    )
 
     args = parser.parse_args()
-    add_studio(args.name, args.token, args.database, args.ntfy_topic)
+    add_studio(
+        args.name,
+        args.token,
+        args.database,
+        args.ntfy_topic,
+        args.db_path,
+    )

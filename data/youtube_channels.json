@@ -1,0 +1,193 @@
+﻿{
+    "updated_at":  "2025-10-01T00:00:00Z",
+    "channels":  [
+                     {
+                         "name":  "DeeterPlays",
+                         "id":  "UCa2J9M0nsrQJ6GxKF5g8Pow"
+                     },
+                     {
+                         "name":  "Laughability",
+                         "id":  "UCg-OUfS9y4Yh0YQBT8aJ6VQ"
+                     },
+                     {
+                         "name":  "TanqR",
+                         "id":  "UCb3Y0PXmR2d0w1X7eW3FhVQ"
+                     },
+                     {
+                         "name":  "RussoPlays",
+                         "id":  "UCqJnJ2C-V8GJZz7GzE5bnVQ"
+                     },
+                     {
+                         "name":  "DigitoSIM",
+                         "id":  "UCn3l2Z6Y4ZC1d7T_y2cYwUw"
+                     },
+                     {
+                         "name":  "DV Plays",
+                         "id":  "UCp1R0kRBdUhEW_k8fKcoeFQ"
+                     },
+                     {
+                         "name":  "TeraBrite Games",
+                         "id":  "UCFz5mJ1GScNwmuredmw6C5g"
+                     },
+                     {
+                         "name":  "KreekCraft",
+                         "id":  "UC5p0TQ3uO9cwvx6YQg9nEuw"
+                     },
+                     {
+                         "name":  "Calvin Vu",
+                         "id":  "UCbsP5BL1zJ09GZbK9gk0rVQ"
+                     },
+                     {
+                         "name":  "Conor3D",
+                         "id":  "UC8_Up8ZYfSNb-iw5yKFZ7VQ"
+                     },
+                     {
+                         "name":  "LaughClip",
+                         "id":  "UCUnZ7K2_7qIbkQGi01P8hBw"
+                     },
+                     {
+                         "name":  "ItzVortex",
+                         "id":  "UCi_5N6f0GO6zkRgLpmj12og"
+                     },
+                     {
+                         "name":  "Parlo",
+                         "id":  "UCQvZh3_ZrW6Q2VZ0x5uMPRQ"
+                     },
+                     {
+                         "name":  "DV Plays Roblox",
+                         "id":  "UC2ClR5B2wSx8s4Z45xRyk-Q"
+                     },
+                     {
+                         "name":  "DeeterPlays Clips",
+                         "id":  "UCZ5d5qb8xxOxALG7KX9Yw_g"
+                     },
+                     {
+                         "name":  "iamSanna",
+                         "id":  "UC8S4rDRZn6Z_StJ-hh7ph8g"
+                     },
+                     {
+                         "name":  "MeganPlays",
+                         "id":  "UCW3fsT0W48sL6-fdt5nBOIQ"
+                     },
+                     {
+                         "name":  "Glitch",
+                         "id":  "UCVyfo6o3v9wJ1gFwS7h3u3w"
+                     },
+                     {
+                         "name":  "BuildIntoGames",
+                         "id":  "UCtoxt3OAz_3t9skoJczAbfw"
+                     },
+                     {
+                         "name":  "Lonnie",
+                         "id":  "UCzl4mgxgw9KLSVkKXzbyVQA"
+                     },
+                     {
+                         "name":  "GamingWithKev",
+                         "id":  "UCrkfdiZ4pF3f5waQaJtjXew"
+                     },
+                     {
+                         "name":  "Leah Ashe",
+                         "id":  "UCyQVt6PHgeW2kmh7mYJfGdQ"
+                     },
+                     {
+                         "name":  "CookieSwirlC",
+                         "id":  "UCelMeixAOTs2OQAAi9wU8-g"
+                     },
+                     {
+                         "name":  "InquisitorMaster",
+                         "id":  "UCS7b93ZwoL1xt2hR7a7l2mg"
+                     },
+                     {
+                         "name":  "ItsFunneh",
+                         "id":  "UCUk7VggtJdo9XYTy3Z5QVAw"
+                     },
+                     {
+                         "name":  "FGTeeV",
+                         "id":  "UCC-RHF_77zQdKcA75hr5oTQ"
+                     },
+                     {
+                         "name":  "Flamingo",
+                         "id":  "UCm-X6o81nRsXQTmqpyArkBQ"
+                     },
+                     {
+                         "name":  "Sketch",
+                         "id":  "UCVi6sLM51K8kidu61o0DR_g"
+                     },
+                     {
+                         "name":  "Denis",
+                         "id":  "UCOaMOXfe8EWH1GJyhqhXrAA"
+                     },
+                     {
+                         "name":  "Thinknoodles",
+                         "id":  "UChd1FPXykD4pust3ljzq6hQ"
+                     },
+                     {
+                         "name":  "Tofuu",
+                         "id":  "REPLACE_ME_TOFOO"
+                     },
+                     {
+                         "name":  "LankyBox",
+                         "id":  "REPLACE_ME_LANKYBOX"
+                     },
+                     {
+                         "name":  "PremiumSalad",
+                         "id":  "REPLACE_ME_PREMIUM"
+                     },
+                     {
+                         "name":  "SharkBlox",
+                         "id":  "REPLACE_ME_SHARKBLOX"
+                     },
+                     {
+                         "name":  "Roplex",
+                         "id":  "REPLACE_ME_ROPLEX"
+                     },
+                     {
+                         "name":  "Rainway",
+                         "id":  "REPLACE_ME_RAINWAY"
+                     },
+                     {
+                         "name":  "xMarcelo",
+                         "id":  "REPLACE_ME_XMARCELO"
+                     },
+                     {
+                         "name":  "BlueBoy",
+                         "id":  "REPLACE_ME_BLUEBOY"
+                     },
+                     {
+                         "name":  "HyperPlays",
+                         "id":  "REPLACE_ME_HYPER"
+                     },
+                     {
+                         "name":  "WonderWorks Studio",
+                         "id":  "REPLACE_ME_WONDERWORKS"
+                     },
+                     {
+                         "name":  "Robuilds",
+                         "id":  "REPLACE_ME_ROBUILDS"
+                     },
+                     {
+                         "name":  "Lemonade",
+                         "id":  "REPLACE_ME_LEMONADE"
+                     },
+                     {
+                         "name":  "Chiseled",
+                         "id":  "REPLACE_ME_CHISELED"
+                     },
+                     {
+                         "name":  "BramP",
+                         "id":  "REPLACE_ME_BRAMP"
+                     },
+                     {
+                         "name":  "GamingMermaid",
+                         "id":  "REPLACE_ME_GAMINGMERMAID"
+                     },
+                     {
+                         "name":  "Maplestick",
+                         "id":  "REPLACE_ME_MAPLESTICK"
+                     },
+                     {
+                         "name":  "HelloItsVG",
+                         "id":  "REPLACE_ME_HELLOITSVG"
+                     }
+                 ]
+}

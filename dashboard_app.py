@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Iterable
 
-import duckdb
 import pandas as pd
 import streamlit as st
 
+from constants import DEFAULT_DB_PATH
+from db_manager import get_db_connection
 from mechanic_detector import MechanicSpike, detect_mechanic_spikes, get_historical_spikes
+from queries import TRENDING_GAMES_QUERY
 
 def _utc_string(dt: datetime | None) -> str:
     if dt is None:
@@ -20,14 +21,11 @@ def _utc_string(dt: datetime | None) -> str:
 
 def _query_dataframe(query: str, params: tuple = ()) -> pd.DataFrame:
     """Execute query via DuckDB and return a pandas DataFrame (pure Python conversion)."""
-    with duckdb.connect(str(DB_PATH), read_only=True) as db:
+    with get_db_connection(DEFAULT_DB_PATH, read_only=True) as db:
         result = db.execute(query, params)
         columns = [col[0] for col in result.description]
         rows = result.fetchall()
     return pd.DataFrame(rows, columns=columns)
-
-
-DB_PATH = Path(__file__).resolve().with_name("early_shift.db")
 
 st.set_page_config(
     page_title="Early Shift Dashboard",
@@ -38,47 +36,10 @@ st.set_page_config(
 
 @st.cache_data(ttl=300)
 def load_top_movers(growth_threshold: float, limit: int) -> pd.DataFrame:
-    query = """
-        WITH latest_snapshot AS (
-            SELECT universe_id,
-                   name,
-                   ccu,
-                   timestamp,
-                   ROW_NUMBER() OVER (PARTITION BY universe_id ORDER BY timestamp DESC) AS row_num
-            FROM games
-        ),
-        filtered_latest AS (
-            SELECT universe_id, name, ccu, timestamp
-            FROM latest_snapshot
-            WHERE row_num = 1
-        ),
-        week_ago_snapshot AS (
-            SELECT universe_id,
-                   ccu,
-                   timestamp,
-                   ROW_NUMBER() OVER (PARTITION BY universe_id ORDER BY timestamp DESC) AS row_num
-            FROM games
-            WHERE timestamp <= current_timestamp - INTERVAL 7 DAY
-        ),
-        filtered_week_ago AS (
-            SELECT universe_id, ccu, timestamp
-            FROM week_ago_snapshot
-            WHERE row_num = 1
-        )
-        SELECT cur.universe_id,
-               COALESCE(meta.name, cur.name) AS game_name,
-               cur.ccu AS current_ccu,
-               prev.ccu AS week_ago_ccu,
-               ROUND(((cur.ccu - prev.ccu) * 100.0) / NULLIF(prev.ccu, 0), 1) AS growth_percent,
-               cur.timestamp AS current_timestamp
-        FROM filtered_latest cur
-        JOIN filtered_week_ago prev ON prev.universe_id = cur.universe_id
-        LEFT JOIN game_metadata meta ON meta.universe_id = cur.universe_id
-        WHERE prev.ccu > 0
-          AND ((cur.ccu - prev.ccu) * 1.0) / NULLIF(prev.ccu, 0) >= ?
-        ORDER BY growth_percent DESC
-        LIMIT ?
-    """
+    """Load top movers using shared query logic."""
+    query = TRENDING_GAMES_QUERY
+    query += " AND ((cur.ccu - prev.ccu) * 1.0) / NULLIF(prev.ccu, 0) >= ?"
+    query += " ORDER BY growth_percent DESC LIMIT ?"
     return _query_dataframe(query, (growth_threshold, limit))
 
 
@@ -101,10 +62,12 @@ def load_recent_videos(hours: int) -> pd.DataFrame:
 def detect_spikes_cached(
     lookback_hours: int, growth_threshold: float
 ) -> pd.DataFrame:
+    """Detect mechanic spikes with caching."""
     spikes: Iterable[MechanicSpike] = detect_mechanic_spikes(
-        db_path=str(DB_PATH),
+        db_path=DEFAULT_DB_PATH,
         lookback_hours=lookback_hours,
         growth_threshold=growth_threshold,
+        persist=False,
     )
     rows = [
         {
@@ -124,7 +87,8 @@ def detect_spikes_cached(
 
 @st.cache_data(ttl=300)
 def load_historical_spikes(limit: int) -> pd.DataFrame:
-    spikes = get_historical_spikes(db_path=str(DB_PATH), limit=limit)
+    """Load historical spikes from database."""
+    spikes = get_historical_spikes(db_path=DEFAULT_DB_PATH, limit=limit)
     rows = [
         {
             "Game": spike.game_name,

@@ -1,49 +1,34 @@
-﻿"""YouTube collector for Early Shift.
+"""YouTube collector for Early Shift.
 Fetches recent videos for curated Roblox creators and stores
 metadata in DuckDB for downstream mechanic detection."""
+
 from __future__ import annotations
 
-import os
+import argparse
+import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, List
+from typing import Iterable, List, Sequence
 
-import duckdb
 import requests
-from dotenv import load_dotenv
 
-# Load environment variables from local .env if present
-load_dotenv(Path(__file__).with_name('.env'))
+from config import get_config
+from constants import (
+    CHANNELS_FILE,
+    DATA_DIR,
+    DEFAULT_DB_PATH,
+    DEFAULT_YOUTUBE_CHANNELS,
+    YOUTUBE_SEARCH_ENDPOINT,
+    YOUTUBE_VIDEOS_ENDPOINT,
+    Tables,
+)
+from db_manager import get_db_connection
+from exceptions import YouTubeAPIError, ConfigurationError
+from schema import SchemaManager
 
-YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
-
-# Hard-coded list of high-signal Roblox channels (channel IDs)
-CREATOR_CHANNEL_IDS: List[str] = [
-    "UCa2J9M0nsrQJ6GxKF5g8Pow",  # DeeterPlays
-    "UCg-OUfS9y4Yh0YQBT8aJ6VQ",  # Laughability
-    "UCb3Y0PXmR2d0w1X7eW3FhVQ",  # TanqR
-    "UCqJnJ2C-V8GJZz7GzE5bnVQ",  # RussoPlays
-    "UCn3l2Z6Y4ZC1d7T_y2cYwUw",  # DigitoSIM
-    "UCp1R0kRBdUhEW_k8fKcoeFQ",  # DV Plays
-    "UCFz5mJ1GScNwmuredmw6C5g",  # TeraBrite Games
-    "UC5p0TQ3uO9cwvx6YQg9nEuw",  # KreekCraft
-    "UCbsP5BL1zJ09GZbK9gk0rVQ",  # Calvin Vu
-    "UC8_Up8ZYfSNb-iw5yKFZ7VQ",  # Conor3D
-    "UCUnZ7K2_7qIbkQGi01P8hBw",  # LaughClip
-    "UCi_5N6f0GO6zkRgLpmj12og",  # ItzVortex
-    "UCQvZh3_ZrW6Q2VZ0x5uMPRQ",  # Parlo
-    "UC2ClR5B2wSx8s4Z45xRyk-Q",  # DV Plays Roblox
-    "UCZ5d5qb8xxOxALG7KX9Yw_g",  # DeeterPlays Clips
-    "UC8S4rDRZn6Z_StJ-hh7ph8g",  # iamSanna
-    "UCW3fsT0W48sL6-fdt5nBOIQ",  # MeganPlays
-    "UCVyfo6o3v9wJ1gFwS7h3u3w",  # Glitch
-    "UCtoxt3OAz_3t9skoJczAbfw",  # BuildIntoGames
-    "UCzl4mgxgw9KLSVkKXzbyVQA",  # Lonnie
-]
-
-SEARCH_ENDPOINT = "https://www.googleapis.com/youtube/v3/search"
-VIDEOS_ENDPOINT = "https://www.googleapis.com/youtube/v3/videos"
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -60,16 +45,45 @@ class VideoRecord:
 
 
 def _require_api_key() -> str:
-    if not YOUTUBE_API_KEY:
-        raise RuntimeError(
-            "YOUTUBE_API_KEY environment variable is required to run the collector."
-        )
-    return YOUTUBE_API_KEY
+    """Get YouTube API key from configuration."""
+    config = get_config()
+    try:
+        config.validate_youtube_api_key()
+        return config.youtube_api_key
+    except ValueError as e:
+        raise ConfigurationError(str(e)) from e
+
+
+def load_channels(path: Path | None = None) -> List[dict]:
+    """Load channel configuration from JSON; fall back to defaults."""
+    path = path or CHANNELS_FILE
+
+    channels: List[dict] = []
+    if path.exists():
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8-sig"))
+            raw = payload.get("channels", payload)
+            if isinstance(raw, list):
+                for entry in raw:
+                    if isinstance(entry, dict):
+                        chan_id = entry.get("id") or entry.get("channel_id")
+                        name = entry.get("name") or entry.get("channel_title", chan_id)
+                    else:
+                        chan_id = str(entry)
+                        name = chan_id
+                    if not chan_id or chan_id.upper().startswith("REPLACE"):
+                        continue
+                    channels.append({"name": name, "id": chan_id})
+        except json.JSONDecodeError as e:
+            logger.warning(f"Failed to parse channels file {path}: {e}")
+
+    if not channels:
+        channels = DEFAULT_YOUTUBE_CHANNELS.copy()
+    return channels
 
 
 def fetch_recent_video_ids(channel_id: str, max_results: int = 5) -> List[dict]:
     """Return raw search items for the most recent channel uploads."""
-
     api_key = _require_api_key()
     params = {
         "key": api_key,
@@ -79,16 +93,19 @@ def fetch_recent_video_ids(channel_id: str, max_results: int = 5) -> List[dict]:
         "type": "video",
         "maxResults": max_results,
     }
-    response = requests.get(SEARCH_ENDPOINT, params=params, timeout=15)
-    response.raise_for_status()
-    payload = response.json()
-    return payload.get("items", [])
+    try:
+        response = requests.get(YOUTUBE_SEARCH_ENDPOINT, params=params, timeout=15)
+        response.raise_for_status()
+        payload = response.json()
+        return payload.get("items", [])
+    except requests.RequestException as e:
+        raise YouTubeAPIError(f"Failed to fetch videos for channel {channel_id}",
+                             status_code=getattr(e.response, 'status_code', None)) from e
 
 
 def fetch_video_statistics(video_ids: Iterable[str]) -> dict[str, dict]:
     """Fetch statistics for the provided video IDs."""
-
-    video_ids = list(video_ids)
+    video_ids = [vid for vid in video_ids if vid]
     if not video_ids:
         return {}
 
@@ -99,20 +116,24 @@ def fetch_video_statistics(video_ids: Iterable[str]) -> dict[str, dict]:
         "id": ",".join(video_ids),
         "maxResults": len(video_ids),
     }
-    response = requests.get(VIDEOS_ENDPOINT, params=params, timeout=15)
-    response.raise_for_status()
-    payload = response.json()
-    result: dict[str, dict] = {}
-    for item in payload.get("items", []):
-        result[item["id"]] = item
-    return result
+    try:
+        response = requests.get(YOUTUBE_VIDEOS_ENDPOINT, params=params, timeout=15)
+        response.raise_for_status()
+        payload = response.json()
+        result: dict[str, dict] = {}
+        for item in payload.get("items", []):
+            result[item["id"]] = item
+        return result
+    except requests.RequestException as e:
+        raise YouTubeAPIError(f"Failed to fetch video statistics",
+                             status_code=getattr(e.response, 'status_code', None)) from e
 
 
 def collect_creator_videos(channel_id: str, max_results: int = 5) -> List[VideoRecord]:
     """Fetch and normalize the most recent videos for a channel."""
 
     search_items = fetch_recent_video_ids(channel_id, max_results=max_results)
-    video_ids = [item["id"].get("videoId") for item in search_items if item.get("id")]
+    video_ids = [item.get("id", {}).get("videoId") for item in search_items if item.get("id")]
     stats_map = fetch_video_statistics(video_ids)
     records: List[VideoRecord] = []
     fetched_at = datetime.now(timezone.utc)
@@ -146,70 +167,100 @@ def collect_creator_videos(channel_id: str, max_results: int = 5) -> List[VideoR
     return records
 
 
-def ensure_schema(db: duckdb.DuckDBPyConnection) -> None:
-    db.execute(
-        """
-        CREATE TABLE IF NOT EXISTS youtube_videos (
-            video_id TEXT PRIMARY KEY,
-            channel_id TEXT,
-            channel_title TEXT,
-            title TEXT,
-            description TEXT,
-            published_at TIMESTAMP,
-            view_count BIGINT,
-            like_count BIGINT,
-            fetched_at TIMESTAMP
-        )
-        """
-    )
-    db.commit()
-
-
-def store_records(records: Iterable[VideoRecord], db_path: str = "early_shift.db") -> int:
+def store_records(records: Iterable[VideoRecord], db_path: str = DEFAULT_DB_PATH) -> int:
+    """Store video records to the database."""
     records = list(records)
     if not records:
         return 0
-    db = duckdb.connect(db_path)
-    ensure_schema(db)
-    db.executemany(
-        """
-        INSERT OR REPLACE INTO youtube_videos (
-            video_id, channel_id, channel_title, title,
-            description, published_at, view_count, like_count, fetched_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        [
-            (
-                r.video_id,
-                r.channel_id,
-                r.channel_title,
-                r.title,
-                r.description,
-                r.published_at,
-                r.view_count,
-                r.like_count,
-                r.fetched_at,
-            )
-            for r in records
-        ],
-    )
-    db.commit()
-    db.close()
+    
+    with get_db_connection(db_path) as db:
+        SchemaManager._ensure_youtube_table(db)
+        db.executemany(
+            f"""
+            INSERT OR REPLACE INTO {Tables.YOUTUBE_VIDEOS} (
+                video_id, channel_id, channel_title, title,
+                description, published_at, view_count, like_count, fetched_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    r.video_id,
+                    r.channel_id,
+                    r.channel_title,
+                    r.title,
+                    r.description,
+                    r.published_at,
+                    r.view_count,
+                    r.like_count,
+                    r.fetched_at,
+                )
+                for r in records
+            ],
+        )
+        db.commit()
     return len(records)
 
 
-def run_collection(channels: Iterable[str] = CREATOR_CHANNEL_IDS, max_results: int = 5) -> None:
+def select_channel_batch(
+    channels: Sequence[dict],
+    batch_size: int | None,
+    batch_index: int,
+) -> List[dict]:
+    if not batch_size or batch_size <= 0 or batch_size >= len(channels):
+        return list(channels)
+    batches = [channels[i : i + batch_size] for i in range(0, len(channels), batch_size)]
+    batch_index = batch_index % len(batches)
+    return batches[batch_index]
+
+
+def run_collection(
+    channels: Sequence[dict],
+    max_results: int = 5,
+    batch_size: int | None = None,
+    batch_index: int = 0,
+) -> None:
+    """Run video collection for the specified channels."""
+    selected = select_channel_batch(channels, batch_size, batch_index)
     total = 0
-    for channel_id in channels:
+    for channel in selected:
+        channel_id = channel["id"]
+        channel_name = channel.get("name", channel_id)
         try:
             records = collect_creator_videos(channel_id, max_results=max_results)
             inserted = store_records(records)
-            print(f"[OK] Stored {inserted} videos for channel {channel_id}")
+            logger.info(f"Stored {inserted} videos for {channel_name} ({channel_id})")
             total += inserted
+        except YouTubeAPIError as exc:
+            logger.error(f"YouTube API error for {channel_name} ({channel_id}): {exc}")
         except Exception as exc:
-            print(f"[WARN] Failed to collect {channel_id}: {exc}")
-    print(f"[DONE] Stored/updated {total} videos")
+            logger.warning(f"Failed to collect {channel_name} ({channel_id}): {exc}")
+    logger.info(f"Stored/updated {total} videos from {len(selected)} channels")
 
 
 if __name__ == "__main__":
-    run_collection()
+    parser = argparse.ArgumentParser(description="Collect Roblox creator videos.")
+    parser.add_argument("--channels-file", type=Path, help="Optional JSON file with channel list")
+    parser.add_argument("--max-results", type=int, default=5, help="Videos per channel to fetch")
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=0,
+        help="Number of channels per run (0 = all)",
+    )
+    parser.add_argument(
+        "--batch-index",
+        type=int,
+        default=0,
+        help="Batch index to run when batch-size is set",
+    )
+    args = parser.parse_args()
+
+    DATA_DIR.mkdir(exist_ok=True)
+    channels = load_channels(args.channels_file)
+    source_path = args.channels_file or CHANNELS_FILE
+    if source_path.exists():
+        logger.info(f"Loaded {len(channels)} channels from {source_path}")
+    else:
+        logger.info(f"Loaded {len(channels)} channels from defaults")
+    batch_size = args.batch_size if args.batch_size > 0 else None
+    run_collection(channels, max_results=args.max_results, batch_size=batch_size, batch_index=args.batch_index)

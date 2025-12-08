@@ -3,69 +3,59 @@ main.py - Orchestrates Early Shift monitoring.
 """
 
 import asyncio
+import logging
 from datetime import datetime
 from typing import Dict, List
 
 import aiohttp
-import duckdb
 
+from constants import DEFAULT_DB_PATH, MONITORING_INTERVAL_HOURS, NTFY_URL, Tables
+from db_manager import DatabaseManager
 from notion_writer import NotionWriter
+from queries import TrendingGame, get_trending_games
 from roproxy_client import RoProxyClient
+from schema import SchemaManager
+
+logger = logging.getLogger(__name__)
 
 
 class EarlyShift:
     """Main orchestrator for game trend monitoring."""
 
-    def __init__(self, db_path: str = "early_shift.db") -> None:
+    def __init__(self, db_path: str = DEFAULT_DB_PATH) -> None:
         self.db_path = db_path
         self.client = RoProxyClient(db_path)
         self.writer = NotionWriter()
-        self.db = duckdb.connect(self.db_path)
+        self.db_manager = DatabaseManager(db_path)
         self._ensure_schema()
 
     def _ensure_schema(self) -> None:
-        self.db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS studios (
-                studio_id TEXT PRIMARY KEY,
-                name TEXT,
-                notion_token TEXT,
-                notion_database_id TEXT,
-                ntfy_topic TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
-        # Backfill columns for older installs that stored webhook URLs.
-        self.db.execute("ALTER TABLE studios ADD COLUMN IF NOT EXISTS notion_token TEXT")
-        self.db.execute("ALTER TABLE studios ADD COLUMN IF NOT EXISTS notion_database_id TEXT")
-        self.db.execute("ALTER TABLE studios ADD COLUMN IF NOT EXISTS ntfy_topic TEXT")
-        self.db.commit()
+        """Ensure all required database tables exist."""
+        SchemaManager.ensure_all_tables(self.db_manager.db)
 
     def get_trending_games(self) -> List[Dict[str, object]]:
-        with open("diff_detector.sql", "r", encoding="utf-8") as handle:
-            sql = handle.read()
+        """Get trending games using shared query logic."""
+        trending = get_trending_games(self.db_manager.db, growth_threshold=0.0)
+        return [self._trending_game_to_dict(game) for game in trending]
 
-        rows = self.db.execute(sql).fetchall()
-        games: List[Dict[str, object]] = []
-        for row in rows:
-            games.append(
-                {
-                    "universe_id": row[0],
-                    "game_name": row[1] or "Unknown",
-                    "current_ccu": row[2] or 0,
-                    "week_ago_ccu": row[3] or 0,
-                    "growth_percent": float(row[4] or 0.0),
-                    "growth_rate": float(row[5] or 0.0),
-                    "peak_ccu": row[6] or row[2] or 0,
-                    "timestamp": row[7],
-                }
-            )
-        return games
+    @staticmethod
+    def _trending_game_to_dict(game: TrendingGame) -> Dict[str, object]:
+        """Convert TrendingGame to dictionary for backward compatibility."""
+        return {
+            "universe_id": game.universe_id,
+            "game_name": game.game_name,
+            "current_ccu": game.current_ccu,
+            "week_ago_ccu": game.week_ago_ccu,
+            "growth_percent": game.growth_percent,
+            "growth_rate": game.growth_rate,
+            "peak_ccu": game.peak_ccu,
+            "timestamp": game.timestamp,
+        }
 
     def get_subscribed_studios(self) -> List[Dict[str, object]]:
-        rows = self.db.execute(
-            "SELECT studio_id, name, notion_token, notion_database_id, ntfy_topic FROM studios"
+        """Get list of subscribed studios."""
+        rows = self.db_manager.db.execute(
+            f"SELECT studio_id, name, notion_token, notion_database_id, ntfy_topic FROM {Tables.STUDIOS}"
         ).fetchall()
         return [
             {
@@ -79,6 +69,7 @@ class EarlyShift:
         ]
 
     async def send_ntfy_alerts(self, games: List[Dict[str, object]], studios: List[Dict[str, object]]) -> None:
+        """Send ntfy.sh alerts for trending games."""
         async with aiohttp.ClientSession() as session:
             for studio in studios:
                 topic = (studio.get("ntfy_topic") or "").strip()
@@ -95,56 +86,63 @@ class EarlyShift:
                         "priority": 5,
                     }
                     try:
-                        async with session.post("https://ntfy.sh", json=payload) as resp:
+                        async with session.post(NTFY_URL, json=payload) as resp:
                             if resp.status >= 400:
                                 text = await resp.text()
-                                print(
+                                logger.warning(
                                     f"ntfy alert failure for {studio['name']} ({topic}): "
                                     f"{resp.status} {text.strip()}"
                                 )
                     except Exception as exc:
-                        print(f"ntfy alert error for {studio['name']} ({topic}): {exc}")
+                        logger.error(f"ntfy alert error for {studio['name']} ({topic}): {exc}")
 
     async def run_monitoring_cycle(self) -> None:
-        print(f"\n[Early Shift] Monitoring cycle started {datetime.utcnow().isoformat()}Z")
+        """Run a single monitoring cycle."""
+        logger.info(f"Monitoring cycle started {datetime.utcnow().isoformat()}Z")
 
         universe_ids = await self.client.get_top_universe_ids(limit=500)
         await self.client.poll_top_games(universe_ids)
 
         trending = self.get_trending_games()
-        print(f"[Early Shift] Found {len(trending)} trending games")
+        logger.info(f"Found {len(trending)} trending games")
 
         if not trending:
-            print("[Early Shift] No eligible games this cycle\n")
+            logger.info("No eligible games this cycle")
             return
 
         studios = self.get_subscribed_studios()
         if not studios:
-            print("[Early Shift] No studios configured; skipping notifications\n")
+            logger.info("No studios configured; skipping notifications")
             return
 
         await self.writer.notify_studios(trending, studios)
         await self.send_ntfy_alerts(trending, studios)
 
-        print(f"[Early Shift] Cycle complete {datetime.utcnow().isoformat()}Z\n")
+        logger.info(f"Cycle complete {datetime.utcnow().isoformat()}Z")
 
     async def run_forever(self) -> None:
+        """Run monitoring cycles continuously."""
         while True:
             await self.run_monitoring_cycle()
-            await asyncio.sleep(4 * 60 * 60)
+            await asyncio.sleep(MONITORING_INTERVAL_HOURS * 60 * 60)
+    
+    def close(self) -> None:
+        """Clean up resources."""
+        self.db_manager.close()
 
 
-def add_test_studio(db_path: str = "early_shift.db") -> None:
-    db = duckdb.connect(db_path)
-    db.execute(
-        """
-        INSERT OR REPLACE INTO studios (studio_id, name, notion_token, notion_database_id, ntfy_topic)
-        VALUES ('test-studio', 'Test Studio', 'YOUR_NOTION_TOKEN', 'YOUR_DATABASE_ID', 'early-shift-test')
-        """
-    )
-    db.commit()
-    db.close()
-    print("Test studio inserted. Update credentials before using production alerts.")
+def add_test_studio(db_path: str = DEFAULT_DB_PATH) -> None:
+    """Add a test studio for development/testing."""
+    with DatabaseManager(db_path) as db_manager:
+        SchemaManager.ensure_all_tables(db_manager.db)
+        db_manager.db.execute(
+            f"""
+            INSERT OR REPLACE INTO {Tables.STUDIOS} (studio_id, name, notion_token, notion_database_id, ntfy_topic)
+            VALUES ('test-studio', 'Test Studio', 'YOUR_NOTION_TOKEN', 'YOUR_DATABASE_ID', 'early-shift-test')
+            """
+        )
+        db_manager.db.commit()
+    logger.info("Test studio inserted. Update credentials before using production alerts.")
 
 
 if __name__ == "__main__":

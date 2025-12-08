@@ -3,27 +3,27 @@ Combines CCU growth data with creator video chatter to surface
 potentially viral mechanics for Roblox studios."""
 from __future__ import annotations
 
+import logging
 import re
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Iterable, List
 
-import duckdb
 from rapidfuzz import fuzz
 
-GROWTH_THRESHOLD = 0.25  # 25% growth
-MENTION_LOOKBACK_HOURS = 48
-KEYWORD_HINTS = [
-    "new",
-    "update",
-    "secret",
-    "mechanic",
-    "code",
-    "feature",
-    "quest",
-    "event",
-]
-FUZZ_THRESHOLD = 82
+from constants import (
+    DEFAULT_DB_PATH,
+    FUZZ_THRESHOLD,
+    GROWTH_THRESHOLD,
+    KEYWORD_HINTS,
+    MENTION_LOOKBACK_HOURS,
+    Tables,
+)
+from db_manager import get_db_connection
+from queries import get_growth_candidates
+from schema import SchemaManager
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -55,39 +55,16 @@ def _extract_mechanic(title: str) -> str:
 
 
 
-def _ensure_spikes_table(db: duckdb.DuckDBPyConnection) -> None:
-    """Create mechanic_spikes table if it doesn't exist."""
-    db.execute(
-        """
-        CREATE TABLE IF NOT EXISTS mechanic_spikes (
-            universe_id INTEGER NOT NULL,
-            game_name TEXT,
-            current_ccu INTEGER,
-            week_ago_ccu INTEGER,
-            growth_percent DOUBLE,
-            published_at TIMESTAMP,
-            mechanic TEXT,
-            video_title TEXT,
-            video_url TEXT,
-            channel_title TEXT,
-            detected_at TIMESTAMP NOT NULL
-        )
-        """
-    )
-    db.commit()
-
-
-
-def _persist_spikes(db: duckdb.DuckDBPyConnection, spikes: List[MechanicSpike]) -> None:
+def _persist_spikes(db, spikes: List[MechanicSpike]) -> None:
     """Save detected spikes to database."""
     if not spikes:
         return
     
-    _ensure_spikes_table(db)
+    SchemaManager._ensure_mechanic_spikes_table(db)
     
     for spike in spikes:
-        db.execute("""
-            INSERT INTO mechanic_spikes (
+        db.execute(f"""
+            INSERT INTO {Tables.MECHANIC_SPIKES} (
                 universe_id, game_name, current_ccu, week_ago_ccu,
                 growth_percent, published_at, mechanic, video_title,
                 video_url, channel_title, detected_at
@@ -109,110 +86,49 @@ def _persist_spikes(db: duckdb.DuckDBPyConnection, spikes: List[MechanicSpike]) 
 
 
 def get_historical_spikes(
-    db_path: str = "early_shift.db",
+    db_path: str = DEFAULT_DB_PATH,
     limit: int = 50
 ) -> List[MechanicSpike]:
     """Retrieve historical spikes from database."""
-    db = duckdb.connect(db_path)
-    _ensure_spikes_table(db)
-    
-    rows = db.execute("""
-        SELECT universe_id, game_name, current_ccu, week_ago_ccu,
-               growth_percent, published_at, mechanic, video_title,
-               video_url, channel_title, detected_at
-        FROM mechanic_spikes
-        ORDER BY detected_at DESC
-        LIMIT ?
-    """, (limit,)).fetchall()
-    
-    db.close()
-    
-    return [
-        MechanicSpike(
-            universe_id=row[0],
-            game_name=row[1],
-            current_ccu=row[2],
-            week_ago_ccu=row[3],
-            growth_percent=row[4],
-            published_at=row[5],
-            mechanic=row[6],
-            video_title=row[7],
-            video_url=row[8],
-            channel_title=row[9],
-            detected_at=row[10]
-        )
-        for row in rows
-    ]
+    with get_db_connection(db_path, read_only=True) as db:
+        SchemaManager._ensure_mechanic_spikes_table(db)
+        
+        rows = db.execute(f"""
+            SELECT universe_id, game_name, current_ccu, week_ago_ccu,
+                   growth_percent, published_at, mechanic, video_title,
+                   video_url, channel_title, detected_at
+            FROM {Tables.MECHANIC_SPIKES}
+            ORDER BY detected_at DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+        
+        return [
+            MechanicSpike(
+                universe_id=row[0],
+                game_name=row[1],
+                current_ccu=row[2],
+                week_ago_ccu=row[3],
+                growth_percent=row[4],
+                published_at=row[5],
+                mechanic=row[6],
+                video_title=row[7],
+                video_url=row[8],
+                channel_title=row[9],
+                detected_at=row[10]
+            )
+            for row in rows
+        ]
 
 
-def _read_growth_candidates(
-    db: duckdb.DuckDBPyConnection, growth_threshold: float
-) -> List[dict]:
-    query = """
-        WITH latest_snapshot AS (
-            SELECT universe_id,
-                   name,
-                   ccu,
-                   timestamp,
-                   ROW_NUMBER() OVER (PARTITION BY universe_id ORDER BY timestamp DESC) AS row_num
-            FROM games
-        ),
-        filtered_latest AS (
-            SELECT universe_id, name, ccu, timestamp
-            FROM latest_snapshot
-            WHERE row_num = 1
-        ),
-        week_ago_snapshot AS (
-            SELECT universe_id,
-                   ccu,
-                   timestamp,
-                   ROW_NUMBER() OVER (PARTITION BY universe_id ORDER BY timestamp DESC) AS row_num
-            FROM games
-            WHERE timestamp <= current_timestamp - INTERVAL 7 DAY
-        ),
-        filtered_week_ago AS (
-            SELECT universe_id, ccu, timestamp
-            FROM week_ago_snapshot
-            WHERE row_num = 1
-        )
-        SELECT cur.universe_id,
-               COALESCE(meta.name, cur.name) AS game_name,
-               cur.ccu AS current_ccu,
-               prev.ccu AS week_ago_ccu,
-               ((cur.ccu - prev.ccu) * 1.0) / NULLIF(prev.ccu, 0) AS growth_rate,
-               cur.timestamp AS current_timestamp
-        FROM filtered_latest cur
-        JOIN filtered_week_ago prev ON prev.universe_id = cur.universe_id
-        LEFT JOIN game_metadata meta ON meta.universe_id = cur.universe_id
-        WHERE prev.ccu > 0
-    """
-    rows = db.execute(query).fetchall()
-    candidates: List[dict] = []
-    for row in rows:
-        growth_rate = row[4]
-        if growth_rate is None or growth_rate < growth_threshold:
-            continue
-        candidates.append(
-            {
-                "universe_id": row[0],
-                "game_name": row[1] or "Unknown",
-                "current_ccu": int(row[2] or 0),
-                "week_ago_ccu": int(row[3] or 0),
-                "growth_percent": float(growth_rate * 100.0),
-                "current_timestamp": row[5],
-            }
-        )
-    return candidates
-
-
-def _fetch_recent_videos(db: duckdb.DuckDBPyConnection, since: datetime) -> List[dict]:
-    query = """
+def _fetch_recent_videos(db, since: datetime) -> List[dict]:
+    """Fetch recent videos from database."""
+    query = f"""
         SELECT video_id,
                channel_title,
                title,
                published_at,
                view_count
-        FROM youtube_videos
+        FROM {Tables.YOUTUBE_VIDEOS}
         WHERE published_at >= ?
     """
     return [
@@ -238,51 +154,61 @@ def _video_matches_game(game_name: str, video_title: str) -> bool:
 
 
 def detect_mechanic_spikes(
-    db_path: str = "early_shift.db",
+    db_path: str = DEFAULT_DB_PATH,
     lookback_hours: int = MENTION_LOOKBACK_HOURS,
     growth_threshold: float = GROWTH_THRESHOLD,
     persist: bool = True,
 ) -> List[MechanicSpike]:
-    db = duckdb.connect(db_path)
-    candidates = _read_growth_candidates(db, growth_threshold)
-    if not candidates:
-        db.close()
-        return []
-
-    since = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
-    videos = _fetch_recent_videos(db, since)
+    """
+    Detect mechanic spikes by correlating CCU growth with YouTube mentions.
     
-    spikes: List[MechanicSpike] = []
+    Args:
+        db_path: Path to the database
+        lookback_hours: Hours to look back for video mentions
+        growth_threshold: Minimum growth rate threshold (as decimal)
+        persist: Whether to persist results to database
+        
+    Returns:
+        List of detected MechanicSpike objects
+    """
+    with get_db_connection(db_path) as db:
+        candidates = get_growth_candidates(db, growth_threshold)
+        if not candidates:
+            return []
 
-    for candidate in candidates:
-        for video in videos:
-            title = video["title"] or ""
-            if not title:
-                continue
-            if not _video_matches_game(candidate["game_name"], title):
-                continue
-            mechanic = _extract_mechanic(title)
-            spikes.append(
-                MechanicSpike(
-                    universe_id=candidate["universe_id"],
-                    game_name=candidate["game_name"],
-                    current_ccu=candidate["current_ccu"],
-                    week_ago_ccu=candidate["week_ago_ccu"],
-                    growth_percent=candidate["growth_percent"],
-                    published_at=video["published_at"],
-                    mechanic=mechanic,
-                    video_title=title,
-                    video_url=f"https://youtube.com/watch?v={video['video_id']}",
-                    channel_title=video["channel_title"],
-                    detected_at=datetime.now(timezone.utc),
+        since = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
+        videos = _fetch_recent_videos(db, since)
+        
+        spikes: List[MechanicSpike] = []
+
+        for candidate in candidates:
+            for video in videos:
+                title = video["title"] or ""
+                if not title:
+                    continue
+                if not _video_matches_game(candidate.game_name, title):
+                    continue
+                mechanic = _extract_mechanic(title)
+                spikes.append(
+                    MechanicSpike(
+                        universe_id=candidate.universe_id,
+                        game_name=candidate.game_name,
+                        current_ccu=candidate.current_ccu,
+                        week_ago_ccu=candidate.week_ago_ccu,
+                        growth_percent=candidate.growth_percent,
+                        published_at=video["published_at"],
+                        mechanic=mechanic,
+                        video_title=title,
+                        video_url=f"https://youtube.com/watch?v={video['video_id']}",
+                        channel_title=video["channel_title"],
+                        detected_at=datetime.now(timezone.utc),
+                    )
                 )
-            )
-    
-    if persist and spikes:
-        _persist_spikes(db, spikes)
-    
-    db.close()
-    return spikes
+        
+        if persist and spikes:
+            _persist_spikes(db, spikes)
+        
+        return spikes
 
 
 def format_spikes_table(spikes: Iterable[MechanicSpike]) -> str:
@@ -323,5 +249,5 @@ def format_spikes_table(spikes: Iterable[MechanicSpike]) -> str:
 
 if __name__ == "__main__":
     spikes = detect_mechanic_spikes()
-    print(format_spikes_table(spikes))
-    print(f"\n{len(spikes)} spikes detected and persisted to database.")
+    logger.info(format_spikes_table(spikes))
+    logger.info(f"{len(spikes)} spikes detected and persisted to database.")

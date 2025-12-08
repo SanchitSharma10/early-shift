@@ -218,3 +218,11 @@ Built by [@SanchitSharma10](https://github.com/SanchitSharma10)
 - No authentication required
 - No PII collected
 - TOS-compliant data collection
+### YouTube Channel List
+- Edit `data/youtube_channels.json` to add or update the creator list (up to 50 channels recommended).
+- Placeholder entries with IDs starting `REPLACE_ME_` are ignored until you supply real channel IDs.
+- Batch collection example (run 15 channels at a time):
+  ```bash
+  python youtube_collector.py --batch-size 15 --batch-index 0 --max-results 5
+  ```
+- Rotate the `--batch-index` (0, 1, 2, ...) each run to cover every creator without exceeding YouTube API quotas.

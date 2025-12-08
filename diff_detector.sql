@@ -19,7 +19,7 @@ week_ago_snapshot AS (
            timestamp,
            ROW_NUMBER() OVER (PARTITION BY universe_id ORDER BY timestamp DESC) AS row_num
     FROM games
-    WHERE timestamp <= datetime('now', '-7 days')
+    WHERE timestamp <= current_timestamp - INTERVAL 7 DAY
 ),
 filtered_week_ago AS (
     SELECT universe_id, ccu, timestamp
@@ -30,7 +30,7 @@ peak_window AS (
     SELECT universe_id,
            MAX(ccu) AS peak_ccu
     FROM games
-    WHERE timestamp >= datetime('now', '-7 days')
+    WHERE timestamp >= current_timestamp - INTERVAL 7 DAY
     GROUP BY universe_id
 )
 SELECT
