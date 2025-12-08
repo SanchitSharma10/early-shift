@@ -138,10 +138,10 @@ See `ROADMAP.md` for detailed development plan.
 ## 💵 Pricing
 
 **Beta**: Free for first 5 studios (testimonial exchange)  
-**Production**: $199/month per studio
+**Production**: Get in touch via Linkedin
 
 Includes:
-- Unlimited game monitoring
+- Game monitoring
 - 6-hour update frequency
 - Notion integration
 - Mobile alerts (ntfy.sh)
