@@ -1,4 +1,5 @@
 # EARLY SHIFT - Mechanic Spike Detector
+**Note: this repo was reset on <date> from a local 6-month development history**
 
 **Detect trending Roblox game mechanics 24-48 hours before market saturation.**
 
@@ -127,35 +128,12 @@ See `ROADMAP.md` for detailed development plan.
 - Multi-signal fusion (TikTok + Twitter mentions)
 - Confidence scoring based on historical accuracy
 
-**Phase 3** (8-12 weeks):
-- Supabase data warehouse migration for scale
-- Real-time WebSocket alerts
-- Studio feedback loop (mark spikes as "useful" / "false positive")
-- API for programmatic access
-
----
-
-## 💵 Pricing
-
-**Beta**: Free for first 5 studios (testimonial exchange)  
-**Production**: Get in touch via Linkedin
-
 Includes:
 - Game monitoring
 - 6-hour update frequency
 - Notion integration
 - Mobile alerts (ntfy.sh)
 - Historical spike feed
-
----
-
-## 📱 Mobile Alerts
-
-For growth spikes >50%, subscribe to mobile push notifications:
-```bash
-# iOS/Android app: ntfy
-# Subscribe to: https://ntfy.sh/early-shift-alerts
-```
 
 ---
 
