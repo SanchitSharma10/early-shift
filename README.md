@@ -1,12 +1,17 @@
-# EARLY SHIFT - Mechanic Spike Detector
+# EARLY SHIFT — Creator-Linked Spike Detection for Roblox
 
-**Detect trending Roblox game mechanics 24-48 hours before market saturation.**
+**Detect creator-driven CCU spikes with a median 2-day lead on the peak — backtested, not vibes.**
 
 ## 🎯 What It Does
 
-Early Shift monitors 500+ Roblox games and cross-references CCU spikes with YouTube creator activity to alert studios when new mechanics go viral - before 20+ competitors copy them.
+Early Shift monitors 1,700+ Roblox games and cross-references CCU spikes with YouTube creator activity, alerting studios when a creator-driven surge starts — while there's still upside ahead — and telling them whether spikes like it tend to stick.
 
-**Example**: Caught Pet Simulator X's merge mechanic spike 36 hours before it hit the Popular page.
+**Backtested across 689 episodes vs size/time-matched control spikes (Dec 2025 – Jun 2026):**
+- Alerts fire a median of **2 days before** the local CCU peak, with **+18% median CCU upside** remaining
+- Creator-linked spikes retain significantly more lift at 7 days than uncovered spikes (**0.50 vs 0.37 median retention, p ≈ 0.002**)
+- Retention varies sharply by genre: RPG/Strategy spikes hold (~75% sustained), Sports & Racing spikes are flash traffic (45%)
+
+Full methodology and honest caveats: [`analysis/BACKTEST_REPORT.md`](analysis/BACKTEST_REPORT.md)
 
 ---
 
@@ -262,9 +267,8 @@ See `CASE_STUDY.md` for a dataset snapshot and example detections.
 
 Built by [@SanchitSharma10](https://github.com/SanchitSharma10)
 
-**Total lines of code**: ~600  
 **Setup time**: <10 minutes  
-**Detection accuracy**: Being validated (beta phase)
+**Detection performance**: backtested against matched controls — see [`analysis/BACKTEST_REPORT.md`](analysis/BACKTEST_REPORT.md)
 
 ---
 
