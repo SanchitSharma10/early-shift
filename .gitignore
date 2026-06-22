@@ -2,3 +2,5 @@
 *.db
 data/*.db
 !early_shift_demo.db
+__pycache__/
+*.pyc
