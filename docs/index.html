@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Early Shift: Which Roblox spikes actually stick?</title>
+<meta name="description" content="A backtest of 689 creator-linked Roblox CCU spikes vs. size- and time-matched controls. Creator-covered spikes retain significantly more of their lift at 7 days (p ≈ 0.002)." />
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+<style>
+  body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  .chart { width: 100%; height: 420px; }
+</style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+<header class="bg-slate-900 text-white">
+  <div class="max-w-5xl mx-auto px-6 py-12">
+    <p class="text-rose-400 font-semibold tracking-wide text-sm uppercase">Early Shift · Creator-driven growth</p>
+    <h1 class="mt-2 text-3xl sm:text-4xl font-bold leading-tight">Which Roblox spikes actually stick?</h1>
+    <p class="mt-4 text-slate-300 max-w-3xl">
+      Every studio knows the feeling: concurrent users jump 30% overnight. The question that matters is,
+      <em>will it hold?</em> I built a system that watches CCU across 1,000 Roblox
+      games, matches each spike to recent creator (YouTube) coverage, and tracks what happens next.
+      This is what 689 backtested episodes say.
+    </p>
+    <div class="mt-6 flex flex-wrap gap-3 text-sm">
+      <a href="https://github.com/SanchitSharma10/early-shift" class="bg-white/10 hover:bg-white/20 px-4 py-2 rounded-md transition">Repo & methodology →</a>
+      <span class="px-4 py-2 rounded-md bg-rose-500/20 text-rose-200">Dec 2025 – Jun 2026 · 689 episodes vs 904 matched controls</span>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-6 py-12 space-y-16">
+
+  <!-- Headline stats -->
+  <section>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+        <div class="text-3xl font-bold text-slate-900">64.7%<span class="text-base font-medium text-slate-400"> vs 55.9%</span></div>
+        <div class="mt-1 text-sm text-slate-500">Still up 10%+ at 7 days<br>(creator-linked vs control)</div>
+      </div>
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+        <div class="text-3xl font-bold text-slate-900">0.50<span class="text-base font-medium text-slate-400"> vs 0.37</span></div>
+        <div class="mt-1 text-sm text-slate-500">Median lift retained at 7 days</div>
+      </div>
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+        <div class="text-3xl font-bold text-rose-600">p ≈ 0.002</div>
+        <div class="mt-1 text-sm text-slate-500">Paired sign test, 657 matched pairs</div>
+      </div>
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+        <div class="text-3xl font-bold text-slate-900">2 days</div>
+        <div class="mt-1 text-sm text-slate-500">Median early-warning lead, 70% with upside still ahead</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Event study -->
+  <section>
+    <h2 class="text-2xl font-bold text-slate-900">The event study</h2>
+    <p class="mt-2 text-slate-600 max-w-3xl">
+      Both cohorts spike to 1.45 multiplier baseline at detection with near-identical pre-trends. Then the
+      creator-linked cohort holds a persistent gap. The weekly ripple in both curves is weekend seasonality
+      and co-moves and the vertical gap between the lines is the effect. Shaded bands are bootstrap 95% CIs.
+    </p>
+    <div id="chart-event" class="chart mt-6 bg-white rounded-xl shadow-sm border border-slate-200 p-2"></div>
+  </section>
+
+  <!-- Retention gap -->
+  <section>
+    <h2 class="text-2xl font-bold text-slate-900">The retention gap</h2>
+    <p class="mt-2 text-slate-600 max-w-3xl">
+      Plotting how much of the day-0 lift each cohort <em>keeps</em>. Creator-linked spikes hold ~0.50 of their
+      lift at day 7; matched controls without detected coverage decay toward zero (and below, mid-window).
+      Same magnitude spike, same timing but different staying power.
+    </p>
+    <div id="chart-retention" class="chart mt-6 bg-white rounded-xl shadow-sm border border-slate-200 p-2"></div>
+  </section>
+
+  <!-- Genre table -->
+  <section>
+    <h2 class="text-2xl font-bold text-slate-900">The signal means different things by genre</h2>
+    <p class="mt-2 text-slate-600 max-w-3xl">
+      The actionable layer: the same alert is not the same news everywhere. Creator-driven lift in
+      RPG / Strategy / Simulation tends to stick; Sports &amp; Racing spikes are mostly flash traffic.
+    </p>
+    <div class="mt-6 overflow-x-auto bg-white rounded-xl shadow-sm border border-slate-200">
+      <table class="min-w-full text-sm">
+        <thead class="bg-slate-100 text-slate-600">
+          <tr>
+            <th class="text-left px-4 py-3 font-semibold">Genre</th>
+            <th class="text-right px-4 py-3 font-semibold">Episodes</th>
+            <th class="text-right px-4 py-3 font-semibold">Sustained @ 7d</th>
+            <th class="text-right px-4 py-3 font-semibold">Median retention</th>
+          </tr>
+        </thead>
+        <tbody id="genre-body" class="divide-y divide-slate-100"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Methodology / honesty -->
+  <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+    <h2 class="text-xl font-bold text-slate-900">Methodology &amp; honest limits</h2>
+    <ul class="mt-3 space-y-2 text-sm text-slate-600 list-disc pl-5">
+      <li><strong>Matched controls:</strong> each creator-linked spike is paired to a control spike matched on baseline CCU and timing (7 days). 657 usable pairs.</li>
+      <li><strong>Out-of-sample:</strong> the detection ruleset predates the Feb–Jun replay window, so the bulk of episodes are a true out-of-sample test. Code/script/exploit spam videos excluded (16% of the pool).</li>
+      <li><strong>Correlational, not causal:</strong> creators may select games already poised to hold. Matching covers size, timing, and spike magnitude, not everything a creator can see.</li>
+      <li><strong>Bias direction is known:</strong> controls are "no <em>detected</em> coverage" against 151 tracked channels, so some had coverage I can't see, which biases the measured gap <em>downward</em>. The true effect is likely larger.</li>
+      <li><strong>Documented null:</strong> an earlier, smaller live-only sample (64 pairs) showed no significant effect. Underpowered and contaminated by a Friday-scheduling artifact. Both results are reported; the larger supersedes the smaller for an identifiable reason.</li>
+    </ul>
+  </section>
+
+  <footer class="text-center text-sm text-slate-400 pt-4">
+    Built by Sanchit Sharma · <a class="underline hover:text-slate-600" href="https://github.com/SanchitSharma10/early-shift">github.com/SanchitSharma10/early-shift</a>
+  </footer>
+</main>
+
+<script>
+// ---- Embedded event-study series (no server needed) ----
+const ccuDays = [-7,-6,-5,-4,-3,-2,-1,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14];
+const detCcu = {
+  med:[1.0,1.0270,1.0284,1.0286,1.0222,1.0710,1.1656,1.4478,1.2968,1.2919,1.1935,1.2185,1.1840,1.2392,1.2592,1.2684,1.2233,1.2044,1.1140,1.1326,1.1632,1.2155],
+  lo:[1.0,0.9992,0.9999,1.0078,0.9970,1.0343,1.1222,1.4264,1.2651,1.2582,1.1508,1.1710,1.1459,1.1868,1.2113,1.2295,1.1764,1.1605,1.0797,1.0968,1.1236,1.1583],
+  hi:[1.0123,1.0431,1.0752,1.0577,1.0571,1.1084,1.1928,1.4748,1.3484,1.3400,1.2533,1.2606,1.2273,1.2742,1.3006,1.3120,1.2796,1.2394,1.1466,1.1835,1.2072,1.2541]
+};
+const ctlCcu = {
+  med:[1.0,0.9913,0.9745,0.9712,0.9607,0.9884,1.0824,1.3865,1.2160,1.1359,1.0649,1.0506,1.0736,1.1583,1.2088,1.1411,1.0681,0.9904,0.9876,1.0242,1.1104,1.1458],
+  lo:[1.0,0.9732,0.9605,0.9547,0.9383,0.9732,1.0647,1.3749,1.1992,1.1091,1.0492,1.0280,1.0386,1.1324,1.1870,1.1113,1.0358,0.9691,0.9587,0.9949,1.0798,1.1174],
+  hi:[1.0060,1.0048,0.9912,0.9967,0.9805,1.0091,1.1011,1.4039,1.2409,1.1581,1.1004,1.0745,1.1043,1.1833,1.2268,1.1634,1.0955,1.0268,1.0157,1.0423,1.1264,1.1783]
+};
+const retDays = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14];
+const detRet = {
+  med:[1.0,0.6869,0.5705,0.3596,0.3350,0.3351,0.4883,0.5185,0.5120,0.4588,0.3253,0.1723,0.2622,0.3331,0.4056],
+  lo:[1.0,0.5961,0.4995,0.2917,0.2449,0.2649,0.4141,0.4523,0.4325,0.3480,0.2663,0.1026,0.1737,0.2647,0.3323],
+  hi:[1.0,0.7421,0.6457,0.4361,0.4394,0.3865,0.5601,0.5881,0.5780,0.5120,0.3785,0.2458,0.3418,0.4052,0.4716]
+};
+const ctlRet = {
+  med:[1.0,0.5465,0.2896,0.1580,0.0944,0.1507,0.3618,0.4901,0.2698,0.1684,-0.0208,-0.0341,0.0452,0.2276,0.3341],
+  lo:[1.0,0.5023,0.2519,0.0954,0.0586,0.0884,0.3054,0.4034,0.1950,0.0619,-0.0742,-0.1091,-0.0081,0.1738,0.2709],
+  hi:[1.0,0.5813,0.3685,0.2011,0.1611,0.2040,0.4218,0.5441,0.3512,0.2461,0.0568,0.0320,0.0926,0.2856,0.4016]
+};
+
+const RED = "#e11d48", GRAY = "#64748b";
+function band(days, s, color, name) {
+  const x = days.concat(days.slice().reverse());
+  const y = s.hi.concat(s.lo.slice().reverse());
+  return {
+    x, y, fill: "toself", fillcolor: color + "22", line: {color: "transparent"},
+    hoverinfo: "skip", showlegend: false, name
+  };
+}
+function line(days, s, color, name) {
+  return {
+    x: days, y: s.med, mode: "lines", name,
+    line: {color, width: 3}, hovertemplate: "day %{x}: %{y:.2f}<extra>" + name + "</extra>"
+  };
+}
+const baseLayout = {
+  margin: {l: 55, r: 20, t: 10, b: 45},
+  paper_bgcolor: "white", plot_bgcolor: "white",
+  legend: {orientation: "h", y: 1.12, x: 0},
+  xaxis: {title: "days from detection", zeroline: false, gridcolor: "#eef2f7"},
+  hovermode: "x unified"
+};
+
+Plotly.newPlot("chart-event", [
+  band(ccuDays, ctlCcu, GRAY), band(ccuDays, detCcu, RED),
+  line(ccuDays, ctlCcu, GRAY, "Control (no creator coverage)"),
+  line(ccuDays, detCcu, RED, "Creator-linked"),
+  {x: [0,0], y: [0.92, 1.5], mode: "lines", line: {color: "#cbd5e1", dash: "dot", width: 1}, hoverinfo: "skip", showlegend: false}
+], Object.assign({}, baseLayout, {yaxis: {title: "CCU ÷ baseline", gridcolor: "#eef2f7"}}), {responsive: true, displayModeBar: false});
+
+Plotly.newPlot("chart-retention", [
+  band(retDays, ctlRet, GRAY), band(retDays, detRet, RED),
+  line(retDays, ctlRet, GRAY, "Control (no creator coverage)"),
+  line(retDays, detRet, RED, "Creator-linked"),
+  {x: [0,14], y: [0,0], mode: "lines", line: {color: "#cbd5e1", dash: "dot", width: 1}, hoverinfo: "skip", showlegend: false}
+], Object.assign({}, baseLayout, {yaxis: {title: "share of day-0 lift retained", gridcolor: "#eef2f7"}}), {responsive: true, displayModeBar: false});
+
+// ---- Genre table ----
+const genres = [
+  ["RPG", 45, "75.6%", 0.54], ["Strategy", 63, "74.6%", 0.63],
+  ["Adventure", 26, "73.1%", 0.56], ["Simulation", 179, "68.2%", 0.62],
+  ["Party & Casual", 31, "64.5%", 0.51], ["Action", 85, "62.4%", 0.42],
+  ["Roleplay & Avatar Sim", 51, "60.8%", 0.39], ["Survival", 90, "60.0%", 0.34],
+  ["Shooter", 25, "52.0%", 0.33], ["Sports & Racing", 53, "45.3%", 0.15]
+];
+const body = document.getElementById("genre-body");
+for (const [g, n, s, r] of genres) {
+  const tr = document.createElement("tr");
+  tr.innerHTML = `<td class="px-4 py-2.5 font-medium text-slate-700">${g}</td>
+    <td class="px-4 py-2.5 text-right text-slate-500">${n}</td>
+    <td class="px-4 py-2.5 text-right text-slate-700">${s}</td>
+    <td class="px-4 py-2.5 text-right text-slate-700">${r.toFixed(2)}</td>`;
+  body.appendChild(tr);
+}
+</script>
+</body>
+</html>
